@@ -1,8 +1,9 @@
 openapi: 3.0.3
 info:
   title: PharmaTrack - Catálogo API
-  version: 1.0.0
+  version: 1.1.0
   description: API mínima de catálogo (MongoDB) para productos y variantes.
+
 servers:
   - url: http://localhost:8084
     description: Local
@@ -28,7 +29,12 @@ paths:
     get:
       tags: [Productos]
       summary: Listar / buscar productos
-      description: Devuelve un arreglo de productos. Soporta búsqueda por texto (índice full-text), ATC, requiere receta y habilitado.
+      description: |
+        Devuelve un arreglo de productos. Soporta búsqueda por:
+        - texto (índice full-text)
+        - código ATC
+        - requiere receta
+        - habilitado
       parameters:
         - $ref: '#/components/parameters/texto'
         - $ref: '#/components/parameters/atc'
@@ -45,6 +51,7 @@ paths:
                 type: array
                 items:
                   $ref: '#/components/schemas/Producto'
+
     post:
       tags: [Productos]
       summary: Crear producto
@@ -76,7 +83,7 @@ paths:
               schema:
                 $ref: '#/components/schemas/Producto'
         '409':
-          description: Duplicado (clave única, p.ej. código de barras)
+          description: Duplicado (clave única, p. ej., código de barras)
           content:
             application/json:
               schema:
@@ -101,10 +108,11 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/Error'
+
     put:
       tags: [Productos]
       summary: Upsert por ID (actualiza o crea)
-      description: Reemplaza/actualiza el producto cuyo ID coincide con el parámetro de ruta. (En el código actual se usa `findOneAndUpdate` con `upsert:true`.)
+      description: Reemplaza/actualiza el producto cuyo ID coincide con el parámetro de ruta. Usa upsert.
       parameters:
         - $ref: '#/components/parameters/idParam'
       requestBody:
@@ -120,6 +128,75 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/Producto'
+        '409':
+          description: Conflicto por clave única (p. ej., alguna variante con código de barras duplicado)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+
+    patch:
+      tags: [Productos]
+      summary: Actualización parcial por ID
+      description: |
+        Aplica cambios parciales sobre el producto. Solo los campos presentes en el body serán actualizados.
+        **Nota:** si envías `variantes`, reemplazarán el arreglo completo.
+      parameters:
+        - $ref: '#/components/parameters/idParam'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ProductoPatch'
+            examples:
+              nombre_y_flags:
+                summary: Cambios simples
+                value:
+                  nombre: "Paracetamol 500 mg (nuevo)"
+                  habilitado: true
+              variantes_completas:
+                summary: Reemplazar arreglo de variantes
+                value:
+                  variantes:
+                    - codigo_barras: "7750123456789"
+                      forma_farmaceutica: "tableta"
+                      concentracion_dosis: "500mg"
+                      unidades_por_paquete: 10
+      responses:
+        '200':
+          description: Actualizado
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Producto'
+        '404':
+          description: No existe
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '409':
+          description: Conflicto por clave única (p. ej., código de barras duplicado)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+
+    delete:
+      tags: [Productos]
+      summary: Eliminar producto por ID
+      parameters:
+        - $ref: '#/components/parameters/idParam'
+      responses:
+        '204':
+          description: Eliminado (sin contenido)
+        '404':
+          description: No existe
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
 
   /productos/codigos-barras/{ean}:
     get:
@@ -252,7 +329,24 @@ components:
       required: [_id, nombre]
 
     ProductoUpsert:
-      description: Campos aceptados para actualizar/crear. El `_id` del body será ignorado en el servidor si llega.
+      description: |
+        Campos aceptados para actualizar/crear vía PUT.
+        El `_id` del body será ignorado si se envía.
+      type: object
+      properties:
+        nombre: { type: string }
+        codigo_atc: { type: string, nullable: true }
+        requiere_receta: { type: boolean, nullable: true }
+        habilitado: { type: boolean }
+        keywords:
+          type: array
+          items: { type: string }
+        variantes:
+          type: array
+          items: { $ref: '#/components/schemas/Variante' }
+
+    ProductoPatch:
+      description: Campos opcionales para actualización parcial vía PATCH.
       type: object
       properties:
         nombre: { type: string }
@@ -272,6 +366,9 @@ components:
         detail:
           type: string
           example: Error interno
+        code:
+          type: string
+          nullable: true
         dupKey:
           type: object
           additionalProperties: true
