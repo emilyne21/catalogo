@@ -1,0 +1,278 @@
+openapi: 3.0.3
+info:
+  title: PharmaTrack - Catálogo API
+  version: 1.0.0
+  description: API mínima de catálogo (MongoDB) para productos y variantes.
+servers:
+  - url: http://localhost:8084
+    description: Local
+
+tags:
+  - name: System
+  - name: Productos
+
+paths:
+  /healthz:
+    get:
+      tags: [System]
+      summary: Health check
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Health'
+
+  /productos:
+    get:
+      tags: [Productos]
+      summary: Listar / buscar productos
+      description: Devuelve un arreglo de productos. Soporta búsqueda por texto (índice full-text), ATC, requiere receta y habilitado.
+      parameters:
+        - $ref: '#/components/parameters/texto'
+        - $ref: '#/components/parameters/atc'
+        - $ref: '#/components/parameters/rx'
+        - $ref: '#/components/parameters/habilitado'
+        - $ref: '#/components/parameters/limit'
+        - $ref: '#/components/parameters/skip'
+      responses:
+        '200':
+          description: Lista de productos
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/Producto'
+    post:
+      tags: [Productos]
+      summary: Crear producto
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ProductoCreate'
+            examples:
+              ejemplo:
+                value:
+                  _id: "P123"
+                  nombre: "Paracetamol 500mg"
+                  codigo_atc: "N02BE01"
+                  requiere_receta: false
+                  habilitado: true
+                  keywords: ["dolor","fiebre"]
+                  variantes:
+                    - codigo_barras: "7750123456789"
+                      forma_farmaceutica: "tableta"
+                      concentracion_dosis: "500mg"
+                      unidades_por_paquete: 10
+      responses:
+        '201':
+          description: Creado
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Producto'
+        '409':
+          description: Duplicado (clave única, p.ej. código de barras)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+
+  /productos/{id}:
+    get:
+      tags: [Productos]
+      summary: Obtener producto por ID
+      parameters:
+        - $ref: '#/components/parameters/idParam'
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Producto'
+        '404':
+          description: No existe
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+    put:
+      tags: [Productos]
+      summary: Upsert por ID (actualiza o crea)
+      description: Reemplaza/actualiza el producto cuyo ID coincide con el parámetro de ruta. (En el código actual se usa `findOneAndUpdate` con `upsert:true`.)
+      parameters:
+        - $ref: '#/components/parameters/idParam'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ProductoUpsert'
+      responses:
+        '200':
+          description: Actualizado/creado
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Producto'
+
+  /productos/codigos-barras/{ean}:
+    get:
+      tags: [Productos]
+      summary: Buscar producto por código de barras (EAN/GTIN)
+      parameters:
+        - in: path
+          name: ean
+          required: true
+          schema:
+            type: string
+            minLength: 8
+            maxLength: 20
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Producto'
+        '404':
+          description: No existe
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+
+components:
+  parameters:
+    idParam:
+      in: path
+      name: id
+      required: true
+      schema:
+        type: string
+    texto:
+      in: query
+      name: texto
+      required: false
+      schema:
+        type: string
+        minLength: 1
+        maxLength: 100
+      description: Búsqueda full-text sobre nombre/keywords.
+    atc:
+      in: query
+      name: atc
+      required: false
+      schema:
+        type: string
+        minLength: 2
+        maxLength: 20
+    rx:
+      in: query
+      name: rx
+      required: false
+      schema:
+        type: string
+        enum: ['true','false']
+      description: Filtra por `requiere_receta`.
+    habilitado:
+      in: query
+      name: habilitado
+      required: false
+      schema:
+        type: string
+        enum: ['true','false']
+    limit:
+      in: query
+      name: limit
+      required: false
+      schema:
+        type: integer
+        minimum: 1
+        maximum: 200
+        default: 50
+    skip:
+      in: query
+      name: skip
+      required: false
+      schema:
+        type: integer
+        minimum: 0
+        default: 0
+
+  schemas:
+    Health:
+      type: object
+      properties:
+        status:
+          type: string
+          example: ok
+
+    Variante:
+      type: object
+      properties:
+        codigo_barras: { type: string }
+        forma_farmaceutica: { type: string, nullable: true }
+        concentracion_dosis: { type: string, nullable: true }
+        unidades_por_paquete: { type: integer, nullable: true }
+      required: [codigo_barras]
+
+    Producto:
+      type: object
+      properties:
+        _id: { type: string, description: "ID canónico" }
+        nombre: { type: string }
+        codigo_atc: { type: string, nullable: true }
+        requiere_receta: { type: boolean, nullable: true }
+        habilitado: { type: boolean }
+        keywords:
+          type: array
+          items: { type: string }
+        variantes:
+          type: array
+          items: { $ref: '#/components/schemas/Variante' }
+        creado_en:
+          type: string
+          format: date-time
+          nullable: true
+        actualizado_en:
+          type: string
+          format: date-time
+          nullable: true
+      required: [_id, nombre]
+
+    ProductoCreate:
+      allOf:
+        - $ref: '#/components/schemas/Producto'
+      required: [_id, nombre]
+
+    ProductoUpsert:
+      description: Campos aceptados para actualizar/crear. El `_id` del body será ignorado en el servidor si llega.
+      type: object
+      properties:
+        nombre: { type: string }
+        codigo_atc: { type: string, nullable: true }
+        requiere_receta: { type: boolean, nullable: true }
+        habilitado: { type: boolean }
+        keywords:
+          type: array
+          items: { type: string }
+        variantes:
+          type: array
+          items: { $ref: '#/components/schemas/Variante' }
+
+    Error:
+      type: object
+      properties:
+        detail:
+          type: string
+          example: Error interno
+        dupKey:
+          type: object
+          additionalProperties: true
+          description: Clave duplicada (cuando aplica)
