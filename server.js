@@ -153,7 +153,33 @@ app.get("/productos/codigos-barras/:ean", async (req, res, next) => {
     next(e);
   }
 });
+app.patch("/productos/:id", async (req, res, next) => {
+  try {
+    const update = req.body || {};
+    const doc = await Producto.findOneAndUpdate(
+      { _id: req.params.id },
+      { $set: update },
+      { new: true, runValidators: true }
+    ).lean();
 
+    if (!doc) return res.status(404).json({ detail: "No existe" });
+    res.json(doc);
+  } catch (e) {
+    next(e);
+  }
+});
+
+// DELETE: eliminar por ID
+app.delete("/productos/:id", async (req, res, next) => {
+  try {
+    const deleted = await Producto.findByIdAndDelete(req.params.id).lean();
+    if (!deleted) return res.status(404).json({ detail: "No existe" });
+    // 204 = sin contenido
+    res.status(204).end();
+  } catch (e) {
+    next(e);
+  }
+});
 // Swagger opcional
 if (SERVE_DOCS) {
   const spec = YAML.load("./docs/catalogo.yaml");
